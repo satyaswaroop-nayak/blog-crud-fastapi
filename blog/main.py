@@ -1,13 +1,14 @@
 from fastapi import FastAPI, Depends, status, Response, HTTPException
-from . import schemas, models
+from . import schemas, models, crud
 from .database import engine, SessionLocal
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+# from passlib.context import CryptContext
+from typing import List
 
 app = FastAPI()
 models.Base.metadata.create_all(engine)
 
-pwd_cxt = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# pwd_cxt = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_db():
     db = SessionLocal()
@@ -16,65 +17,32 @@ def get_db():
     finally:
         db.close()
 
-@app.post('/blog', status_code=status.HTTP_201_CREATED, tags=['blogs'])
-def createBlog(blog: schemas.Blog, db: Session=Depends(get_db)):
-    new_blog = models.Blog(title=blog.title, body=blog.body)
-    db.add(new_blog)
-    db.commit()
-    db.refresh(new_blog)
-    return new_blog
+@app.post('/blog/{user_id}', status_code=status.HTTP_201_CREATED, tags=['blogs'], response_model=schemas.Blog
+          )
+def createBlog(blog: schemas.BlogCreate, user_id: int, db: Session=Depends(get_db)):
+    return crud.create_blog(db, blog, user_id)
 
-@app.get('/blog', tags=['blogs'])
-def getBlogs(db:Session = Depends(get_db)):
-    blogs = db.query(models.Blog).all()
-    return blogs
+@app.get('/blog/read-all/{user_id}', tags=['blogs'], response_model=List[schemas.Blog])
+def getBlogs(user_id: int, db:Session = Depends(get_db)):
+    return crud.retrieve_blogs(db, user_id)
 
-@app.get('/blog/{id}', status_code=200, response_model=schemas.ShowBlog, tags=['blogs'])
-def getBlog(id: int, response: Response, db: Session = Depends(get_db)):
-    blog = db.query(models.Blog).filter(models.Blog.id==id).all()
-    if not blog.first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Blog with id {id} not found")
-    return blog
+@app.get('/blog/read/{blog_id}', status_code=200, response_model=schemas.Blog, tags=['blogs'])
+def getBlog(blog_id: int,db: Session = Depends(get_db)):
+    return crud.retrieve_blog_by_id(db, blog_id)
 
-@app.put('/blog/{id}', status_code=status.HTTP_202_ACCEPTED, tags=['blogs'])
-def updateBlog(id: int, request:schemas.Blog, db:Session=Depends(get_db)):
-    blog = db.query(models.Blog).filter(models.Blog.id == id)
+@app.put('/blog/update/{blog_id}', status_code=status.HTTP_202_ACCEPTED, tags=['blogs'])
+def updateBlog(blog_id: int, request: schemas.BlogCreate, db:Session=Depends(get_db)):
+    return crud.update_blog(db, blog_id, request)
 
-    if not blog.first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Blog with id {id} not found")
-
-    blog.update(dict(request))
-    db.commit()
-    return 'updated'
-
-@app.delete('/blog/{id}', status_code=status.HTTP_204_NO_CONTENT, tags=['blogs'])
-def deleteBlog(id, db:Session=Depends(get_db)):
-    blog = db.query(models.Blog).filter(models.Blog.id==id)
-    if not blog.first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Blog with id {id} not found")
-
-    blog.delete(synchronize_session=False)
-    db.commit()
-    return {"response":"deleted"}
+@app.delete('/blog/delete/{blog_id}', status_code=status.HTTP_204_NO_CONTENT, tags=['blogs'])
+def deleteBlog(blog_id: int, db:Session=Depends(get_db)):
+    return crud.delete_blog(db, blog_id)
 
 
-@app.post('/user', response_model=schemas.ShowUser, tags=['user'])
-def createUser(request: schemas.User, db:Session=Depends(get_db)):
-    hashedPassword = pwd_cxt.hash(request.password)
-    new_user = models.User(name = request.name, email = request.email, password
-                            = hashedPassword)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+@app.post('/user', response_model=schemas.User, tags=['user'])
+def createUser(request: schemas.UserCreate, db:Session=Depends(get_db)):
+    return crud.create_user(db, request)
 
-@app.get('/user/{id}', response_model=schemas.ShowUser, tags=['user'])
-def getUser(id:int, db:Session=Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id==id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"User with id {id} not found")
-    return user
+@app.get('/user/read/{user_id}', response_model=schemas.User, tags=['user'])
+def getUser(user_id:int, db:Session=Depends(get_db)):
+    return crud.retrieve_user(db, user_id)
